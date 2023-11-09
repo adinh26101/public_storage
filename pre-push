@@ -1,0 +1,82 @@
+#!/bin/sh
+
+# style variable ANCI standard
+italic=$(tput sitm)
+bold=$(tput bold)
+reset_style=$(tput ritm)
+yellow=$(tput setaf 3)
+green=$(tput setaf 2)
+cyan=$(tput setaf 6)
+red=$(tput setaf 1)
+blue=$(tput setaf 4)
+white=$(tput sgr0)
+
+echo "${green}$(cat flipjungle)${white}"
+
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+    against=$(git rev-parse --verify HEAD~1)
+else
+    # Initial commit: diff against an empty tree object
+    EMPTY_TREE=$(git hash-object -t tree /dev/null)
+    against=$EMPTY_TREE
+fi
+FILES_MODIFIED=$(git diff --staged --name-only --diff-filter=ACM -z $against)
+# Redirect output to stderr.
+exec 1>&2
+
+echo "${italic}${cyan}======================================================="
+echo "Checking for tokens, secret keys, etc..."
+echo "=======================================================${reset}${white}"
+echo ""
+
+source ./.git-verification-patterns
+exec < /dev/tty
+# init counter
+NUM_FILES_CHECKED=0
+NUM_FILES_OFFENCES=0
+# base path
+repo_path=$(pwd)
+repo_path=${repo_path//".git/hooks"/}
+repo_path+="/"
+# looping scan
+for F in $FILES_MODIFIED; do
+
+    # looping all pattern
+    for i in "${!git_verification_patterns[@]}"; do
+        MATCH=$(cat $repo_path$F | egrep -i --line-number "${git_verification_patterns[$i]}")
+        # print match detail
+        if [ -z "$MATCH" ]; then
+            # pass
+            continue
+        else
+            NUM_FILES_OFFENCES=$((NUM_FILES_OFFENCES+1))
+            echo -e "FILE: ${yellow}$F${white} - ${italic}${git_verification_patterns_desc[$i]}${reset_style} \n$MATCH"
+            echo ""
+        fi
+    done
+    NUM_FILES_CHECKED=$((NUM_FILES_CHECKED+1))
+
+done
+
+
+exec <&- # Release input
+
+echo "${italic}${cyan}======================= SUMMARY =======================${reset}${white}"
+echo "      Files Checked: $NUM_FILES_CHECKED"
+echo "  Num File Offences: $NUM_FILES_OFFENCES"
+if [ $NUM_FILES_OFFENCES -gt 0 ]; then
+  echo "             Status: ${bold}${red}FAIL${reset}${white}"
+else
+  echo "             Status: ${bold}${green}OK${reset}${white}"
+fi
+echo "${cyan}-------------------------------------------------------${white}"
+
+
+# Exit code based on if > 0 offences found
+if [ $NUM_FILES_OFFENCES -gt 0 ]; then
+  exit 1
+else
+  exit 0
+fi
